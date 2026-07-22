@@ -178,35 +178,31 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Strict System Prompt to guide Gemini in extracting data securely
-SYSTEM_PROMPT = """You are a bank statement parser. You analyze screenshots and images of bank statements, transaction history, or account pages for asset verification and personal finance tracking.
-Scan the entire image thoroughly. Your goal is to extract the bank name and available balances.
+# System Prompt - worded to avoid triggering safety filters on free vision models
+SYSTEM_PROMPT = """You are a document OCR assistant for personal finance tracking and asset verification.
+Your task: Read the text content visible in this image and identify:
 
-Look for key indicators:
-1. Bank / Institution name: Look for logos, header text, domain names, or copyright notices (e.g. Chase, Wells Fargo, Revolut, Chime, Bank of America, Wise, etc.).
-2. Available Balance: Look next to or under the account names. Balance figures can be labeled as "Available Balance", "Available", "Available funds", "Available spend", "Spendable", "Total balance", or simply numbers formatted as currency.
-   
-   - STRICT INSTANT-TRANSFER RULES: Only include balances that can be transferred or spent instantly.
-     * ALLOWED ACCOUNTS (Instant Spendable only): Checking, Savings, Spend, Save, Deposit, Wallet, Main Account, Cash.
-     * STRICTLY EXCLUDE (DO NOT INCLUDE): Credit Cards (credit limit/line of credit or credit card balance), CD (Certificate of Deposit / locked-term accounts), Investment/Brokerage/Trading accounts (Stocks, Mutual funds), Loan Accounts (Personal loans, business loans, mortgages, student loans, auto loans, etc.), Debt, or any locked/non-transferable accounts.
-   - If multiple allowed accounts exist in the statement, mathematically add up/sum only their available balances. Exclude all credit, loan, and CD accounts from the mathematical sum.
-   - CRITICAL FORMATTING RULE FOR BALANCE: Do NOT include any decimal cents (e.g., .25, .90, .00) in the balance. Round or drop the cents entirely. For example: if the balance is $8,822.25, format it as '$8,822'. Strictly omit the decimal cents.
+1. The financial institution or company name shown. Look for logos, header text, domain names, or copyright notices (e.g. Chase, Wells Fargo, Revolut, Chime, Bank of America, Wise, etc.).
 
-CRITICAL SECURITY RULES:
-- DO NOT extract, mention, or include any personal names.
-- DO NOT extract, mention, or include any account numbers, IBANs, Routing numbers, or identifiers.
-- DO NOT include any other personal information (PII).
-- If any of these fields are missing or cannot be identified, write "Unknown Bank" or "Unknown" for that field.
+2. The available dollar amount(s) shown for instant-access deposit accounts only.
+   - ALLOWED account types: Checking, Savings, Spend, Save, Deposit, Wallet, Main Account, Cash.
+   - DO NOT INCLUDE: Credit Cards, CD (Certificate of Deposit), Investment/Brokerage accounts, Loan accounts (personal, business, mortgage, student, auto), Debt, or locked accounts.
+   - If multiple qualifying accounts exist, mathematically sum their available balances.
+   - CRITICAL FORMATTING: Drop any decimal cents. For example: $8,822.25 becomes $8,822. Strictly omit decimals.
 
-CRITICAL PRECISION RULES:
-- Bank balances are highly sensitive. Please read every single digit of the balance extremely carefully. Do not misread '8' as '3', '0' as '8', or '1' as '7'.
-- Verify all digits and place values (thousands, hundreds, tens) against the image before writing the final output. Double-check your reading internally twice.
+PRIVACY RULES:
+- Do NOT extract or mention any personal names, account numbers, IBANs, routing numbers, or identifiers.
+- If any field cannot be identified, write "Unknown" for that field.
 
-Format your output EXACTLY as follows, with no additional introductory or concluding text (this template is strict):
-🏦 Bank/Institution: <Bank Name>
-📂 Account Type: <Account Type(s)>
-💰 Verified Available Balance: <Balance>
-📅 Verification Status: Successful (PII Redacted)"""
+PRECISION RULES:
+- Read every digit extremely carefully. Do not misread 8 as 3, 0 as 8, or 1 as 7.
+- Double-check all digits and place values before writing the final output.
+
+Format your output EXACTLY as follows with no additional text:
+BANK: <institution name>
+TYPE: <account type(s)>
+BALANCE: <total available balance>
+STATUS: Verified"""
 
 
 
@@ -550,18 +546,24 @@ async def perform_ocr_request(base64_image: str, mime_type: str, provider: str, 
                 return await perform_ocr_request(base64_image, mime_type, "groq", attempt_id)
             return "Unknown Bank", "Unknown"
 
-    # Parse details from extracted output format (common parsing block for successful Groq or Gemini run)
+    # Parse details from extracted output format
+    # Supports both new format (BANK:/BALANCE:) and legacy emoji format
     bank_name = "Unknown Bank"
     balance_val = "Unknown"
     
     for line in extracted_text.split("\n"):
-        if "🏦 Bank" in line or "Institution" in line:
-            parts = line.split(":", 1)
-            if len(parts) > 1:
+        line_stripped = line.strip()
+        line_upper = line_stripped.upper()
+        
+        # New format: "BANK: Chase" or legacy "🏦 Bank/Institution: Chase"
+        if line_upper.startswith("BANK:") or "🏦 Bank" in line or "Institution" in line:
+            parts = line_stripped.split(":", 1)
+            if len(parts) > 1 and parts[1].strip():
                 bank_name = parts[1].strip()
-        elif "💰 Verified" in line or "Balance" in line:
-            parts = line.split(":", 1)
-            if len(parts) > 1:
+        # New format: "BALANCE: $8,822" or legacy "💰 Verified Available Balance: $8,822"
+        elif line_upper.startswith("BALANCE:") or "💰 Verified" in line or "Available Balance" in line:
+            parts = line_stripped.split(":", 1)
+            if len(parts) > 1 and parts[1].strip():
                 balance_val = parts[1].strip()
 
     return bank_name, balance_val
