@@ -31,10 +31,21 @@ if GEMINI_API_KEY:
         if k and not k.startswith("YOUR_"):
             GEMINI_API_KEYS.append(k)
 
-# Groq Vision API Config (100% Free alternative to Gemini)
+# Groq Vision API Config
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "YOUR_GROQ_API_KEY_HERE").strip()
 GROQ_MODEL = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct").strip()
-PROVIDER = os.getenv("PROVIDER", "").strip()  # e.g., 'groq' or 'gemini'. If empty, auto-detects.
+
+# OpenRouter API Config (Free vision models via OpenRouter.ai)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "YOUR_OPENROUTER_API_KEY_HERE").strip()
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemma-4-26b-a4b-it:free").strip()
+# Fallback models in case primary is rate-limited
+OPENROUTER_FALLBACK_MODELS = [
+    "nvidia/nemotron-nano-12b-v2-vl:free",
+    "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+]
+
+PROVIDER = os.getenv("PROVIDER", "").strip()  # e.g., 'openrouter', 'groq', or 'gemini'. If empty, auto-detects.
 
 # Admin Authorization Configuration
 ADMIN_USER_IDS = []
@@ -47,7 +58,7 @@ if admin_env:
 
 # Default Factory Settings
 DEFAULT_CONFIG = {
-    "provider": PROVIDER or "groq",
+    "provider": PROVIDER or "openrouter",
     "balance_check_passes": 1,
     "output_channel_id": OUTPUT_CHANNEL_ID or "",
     "ad_copy": "<b>{bank_name}\nBal  {balance_val}\n\nRdp Access \nEmail Access \nLogin info\nIp\n\nDm your offer \n\nEscrow Accepted \n@Wrong_GuyXD\n@YeggBackup</b>",
@@ -242,9 +253,11 @@ def get_channel_id():
 def get_active_provider():
     """Determines the active provider based on dynamic configuration and available keys."""
     prov = active_config.get("provider", "").lower().strip()
-    if prov in ["groq", "gemini"]:
+    if prov in ["groq", "gemini", "openrouter"]:
         return prov
-    # Auto-detect fallback
+    # Auto-detect fallback: prefer OpenRouter > Groq > Gemini
+    if OPENROUTER_API_KEY and not OPENROUTER_API_KEY.startswith("YOUR_"):
+        return "openrouter"
     if GROQ_API_KEY and not GROQ_API_KEY.startswith("YOUR_"):
         return "groq"
     return "gemini"
@@ -255,7 +268,9 @@ def is_configured():
     has_tg = TELEGRAM_BOT_TOKEN and not TELEGRAM_BOT_TOKEN.startswith("YOUR_")
     provider = get_active_provider()
     
-    if provider == "groq":
+    if provider == "openrouter":
+        has_vision = OPENROUTER_API_KEY and not OPENROUTER_API_KEY.startswith("YOUR_")
+    elif provider == "groq":
         has_vision = GROQ_API_KEY and not GROQ_API_KEY.startswith("YOUR_")
     else:
         has_vision = len(GEMINI_API_KEYS) > 0
@@ -279,9 +294,93 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def perform_ocr_request(base64_image: str, mime_type: str, provider: str, attempt_id: int) -> tuple[str, str]:
     """Executes a single OCR request to the active provider and returns parsed (bank_name, balance_val)."""
-    provider_name = "Groq Llama 4" if provider == "groq" else "Google Gemini"
+    provider_name = "OpenRouter" if provider == "openrouter" else ("Groq Llama 4" if provider == "groq" else "Google Gemini")
     
-    if provider == "groq":
+    if provider == "openrouter":
+        # OpenRouter uses OpenAI-compatible API with free vision models
+        models_to_try = [OPENROUTER_MODEL] + OPENROUTER_FALLBACK_MODELS
+        
+        for model_idx, current_model in enumerate(models_to_try):
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": current_model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": SYSTEM_PROMPT + "\n\nExtract bank details from this bank statement or account image according to the system instructions. Focus on strict instant spendable accounts only and read digits with extreme care."
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{mime_type};base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "temperature": 0.2,
+                "max_tokens": 1000
+            }
+
+            max_retries = 2
+            retry_delay = 2.0
+            response = None
+
+            for attempt in range(max_retries):
+                try:
+                    loop = asyncio.get_running_loop()
+                    response = await loop.run_in_executor(
+                        None,
+                        lambda: requests.post(
+                            url,
+                            json=payload,
+                            headers=headers,
+                            timeout=45
+                        )
+                    )
+                    
+                    if response is not None and response.status_code in [429, 503]:
+                        logger.warning(
+                            f"OpenRouter model {current_model} returned {response.status_code} on pass {attempt_id}. "
+                            f"Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})"
+                        )
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 2.0
+                            continue
+                    break
+                except Exception as e:
+                    logger.error(f"Error communicating with OpenRouter model {current_model}: {e}")
+                    if attempt == max_retries - 1:
+                        response = None
+                    else:
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2.0
+
+            if response is not None and response.status_code == 200:
+                try:
+                    res_json = response.json()
+                    extracted_text = res_json["choices"][0]["message"]["content"].strip()
+                    logger.info(f"OpenRouter model {current_model} succeeded on pass {attempt_id}")
+                    break
+                except Exception as e:
+                    logger.error(f"Failed to parse OpenRouter response from {current_model}: {e}")
+            else:
+                status_code = response.status_code if response is not None else "No Response"
+                logger.warning(f"OpenRouter model {current_model} failed with status {status_code}, trying next model...")
+        else:
+            # All OpenRouter models failed
+            logger.error("All OpenRouter free models failed or were rate-limited.")
+            return "Unknown Bank", "Unknown"
+
+    elif provider == "groq":
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -490,7 +589,7 @@ async def process_bank_image(file_id: str, mime_type: str, file_name: str, trigg
 
     # Determine which provider to use
     provider = get_active_provider()
-    provider_name = "Groq Llama 4" if provider == "groq" else "Google Gemini"
+    provider_name = "OpenRouter" if provider == "openrouter" else ("Groq Llama 4" if provider == "groq" else "Google Gemini")
     
     passes = int(active_config.get("balance_check_passes", 3))
     await status_msg.edit_text(f"🔍 Analyzing bank image with {passes} verifications ({provider_name})...")
@@ -733,7 +832,7 @@ You can modify these fields in the configuration:
 1. "ad_copy" (string): The HTML caption template. It should use HTML formatting like <b>, <i>, \\n. It MUST support or preserve "{bank_name}" and "{balance_val}" placeholders so the bot can replace them. If the admin provides a custom message that lacks these placeholders, automatically prepend or integrate them (e.g. "<b>{bank_name}\\nBal  {balance_val}\\n\\n" + their custom text + "</b>").
 2. "mappings" (object): A key-value dictionary of raw bank names (lowercase) to stylized brand names (e.g. {"chase": "Ch4se"}). If the admin wants to add a mapping (e.g. "map Monzo to M0nz0"), add or edit that key. If they want to remove a mapping (e.g. "remove Chase mapping"), delete that key from the mappings.
 3. "output_channel_id" (string or number): The channel username (e.g. "@mychannel") or numeric ID (e.g. -1001234567890).
-4. "provider" (string): The active OCR provider, either "groq" or "gemini".
+4. "provider" (string): The active OCR provider, either "openrouter", "groq", or "gemini".
 5. "balance_check_passes" (integer): The number of OCR verifications to run in parallel to ensure 100% correct digit reading (e.g., 1 for speed check, 3 or 4 for majority voting consensus check).
 
 Analyze the admin's instruction carefully.
@@ -849,9 +948,30 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     provider = get_active_provider()
     
     # We will use the same provider that is active, or fallback
-    provider_name = "Groq Llama 4" if provider == "groq" else "Google Gemini"
+    provider_name = "OpenRouter" if provider == "openrouter" else ("Groq Llama 4" if provider == "groq" else "Google Gemini")
     
-    if provider == "groq":
+    if provider == "openrouter":
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": OPENROUTER_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": ADMIN_CONFIG_SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": f"Current Config:\n{json.dumps(active_config, indent=2)}\n\nAdmin Instruction:\n{user_text}"
+                }
+            ],
+            "temperature": 0.1,
+            "max_tokens": 1000
+        }
+    elif provider == "groq":
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -880,10 +1000,10 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         loop = asyncio.get_running_loop()
-        if provider == "groq":
+        if provider in ["openrouter", "groq"]:
             response = await loop.run_in_executor(
                 None,
-                lambda: requests.post(url, json=payload, headers=headers, timeout=20)
+                lambda: requests.post(url, json=payload, headers=headers, timeout=30)
             )
             if response is not None and response.status_code != 200:
                 status_code = response.status_code if response is not None else "Unknown"
@@ -941,7 +1061,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         res_json = response.json()
-        if provider == "groq":
+        if provider in ["openrouter", "groq"]:
             ai_text = res_json["choices"][0]["message"]["content"].strip()
         else:
             ai_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
