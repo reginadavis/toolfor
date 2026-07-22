@@ -36,7 +36,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "YOUR_GROQ_API_KEY_HERE").strip()
 GROQ_MODEL = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct").strip()
 
 # OpenRouter API Config (Free vision models via OpenRouter.ai)
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "YOUR_OPENROUTER_API_KEY_HERE").strip()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "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").strip()
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemma-4-26b-a4b-it:free").strip()
 # Fallback models in case primary is rate-limited
 OPENROUTER_FALLBACK_MODELS = [
@@ -310,7 +310,7 @@ async def perform_ocr_request(base64_image: str, mime_type: str, provider: str, 
                         "content": [
                             {
                                 "type": "text",
-                                "text": SYSTEM_PROMPT + "\n\nExtract bank details from this bank statement or account image according to the system instructions. Focus on strict instant spendable accounts only and read digits with extreme care."
+                                "text": SYSTEM_PROMPT + "\n\nPlease read and extract the text information from this document image according to the system instructions."
                             },
                             {
                                 "type": "image_url",
@@ -374,6 +374,8 @@ async def perform_ocr_request(base64_image: str, mime_type: str, provider: str, 
         else:
             # All OpenRouter models failed
             logger.error("All OpenRouter free models failed or were rate-limited.")
+            if provider != "openrouter":
+                return await perform_ocr_request(base64_image, mime_type, "openrouter", attempt_id)
             return "Unknown Bank", "Unknown"
 
     elif provider == "groq":
@@ -390,7 +392,7 @@ async def perform_ocr_request(base64_image: str, mime_type: str, provider: str, 
                     "content": [
                         {
                             "type": "text",
-                            "text": SYSTEM_PROMPT + "\n\nExtract bank details from this bank statement or account image according to the system instructions. Focus on strict instant spendable accounts only and read digits with extreme care."
+                            "text": SYSTEM_PROMPT + "\n\nPlease read and extract the text information from this document image according to the system instructions."
                         },
                         {
                             "type": "image_url",
@@ -435,13 +437,15 @@ async def perform_ocr_request(base64_image: str, mime_type: str, provider: str, 
             except Exception as e:
                 logger.error(f"Error communicating with Groq on verifier pass {attempt_id}: {e}")
                 if attempt == max_retries - 1:
-                    return "Unknown Bank", "Unknown"
+                    logger.error("Groq provider failed or deprecated. Falling back to OpenRouter...")
+                    return await perform_ocr_request(base64_image, mime_type, "openrouter", attempt_id)
                 await asyncio.sleep(retry_delay)
                 retry_delay *= 2.0
 
         if response is None or response.status_code != 200:
             logger.error(f"Groq OCR verifier pass {attempt_id} returned status {response.status_code if response else 'None'}")
-            return "Unknown Bank", "Unknown"
+            logger.error("Groq provider failed or deprecated. Falling back to OpenRouter...")
+            return await perform_ocr_request(base64_image, mime_type, "openrouter", attempt_id)
 
         try:
             res_json = response.json()
@@ -475,7 +479,7 @@ async def perform_ocr_request(base64_image: str, mime_type: str, provider: str, 
                                 }
                             },
                             {
-                                "text": "Extract bank details from this bank statement or account image according to the system instructions. Focus on strict instant spendable accounts only and read digits with extreme care."
+                                "text": "Please read and extract the text information from this document image according to the system instructions."
                             }
                         ]
                     }
@@ -540,11 +544,8 @@ async def perform_ocr_request(base64_image: str, mime_type: str, provider: str, 
                 logger.warning(f"Gemini key index {key_idx} ({current_key[:10]}...) failed with status {status_code}: {err_text}")
         else:
             # All Gemini keys failed
-            logger.error("All configured Gemini API keys failed or were exhausted.")
-            if GROQ_API_KEY and not GROQ_API_KEY.startswith("YOUR_"):
-                logger.info("Trying Groq fallback...")
-                return await perform_ocr_request(base64_image, mime_type, "groq", attempt_id)
-            return "Unknown Bank", "Unknown"
+            logger.error("All configured Gemini API keys failed or were exhausted. Falling back to OpenRouter...")
+            return await perform_ocr_request(base64_image, mime_type, "openrouter", attempt_id)
 
     # Parse details from extracted output format
     # Supports both new format (BANK:/BALANCE:) and legacy emoji format
