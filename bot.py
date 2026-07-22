@@ -548,25 +548,30 @@ async def perform_ocr_request(base64_image: str, mime_type: str, provider: str, 
             return await perform_ocr_request(base64_image, mime_type, "openrouter", attempt_id)
 
     # Parse details from extracted output format
-    # Supports both new format (BANK:/BALANCE:) and legacy emoji format
+    # Ultra-robust parser: strips markdown formatting (*), handles all variations of headers
     bank_name = "Unknown Bank"
     balance_val = "Unknown"
     
     for line in extracted_text.split("\n"):
-        line_stripped = line.strip()
-        line_upper = line_stripped.upper()
+        line_clean = line.replace("*", "").strip()
+        line_upper = line_clean.upper()
         
-        # New format: "BANK: Chase" or legacy "🏦 Bank/Institution: Chase"
-        if line_upper.startswith("BANK:") or "🏦 Bank" in line or "Institution" in line:
-            parts = line_stripped.split(":", 1)
+        # Bank name matching
+        if ("BANK" in line_upper or "INSTITUTION" in line_upper) and ":" in line_clean:
+            parts = line_clean.split(":", 1)
             if len(parts) > 1 and parts[1].strip():
-                bank_name = parts[1].strip()
-        # New format: "BALANCE: $8,822" or legacy "💰 Verified Available Balance: $8,822"
-        elif line_upper.startswith("BALANCE:") or "💰 Verified" in line or "Available Balance" in line:
-            parts = line_stripped.split(":", 1)
+                val = parts[1].strip()
+                if val.upper() not in ["UNKNOWN", "UNKNOWN BANK", "<BANK NAME>", "<INSTITUTION NAME>", "N/A", "NONE"]:
+                    bank_name = val
+                    
+        # Balance value matching
+        if ("BALANCE" in line_upper or "SPENDABLE" in line_upper or "AVAILABLE" in line_upper) and ":" in line_clean:
+            parts = line_clean.split(":", 1)
             if len(parts) > 1 and parts[1].strip():
-                balance_val = parts[1].strip()
-
+                val = parts[1].strip()
+                if val.upper() not in ["UNKNOWN", "<BALANCE>", "<TOTAL AVAILABLE BALANCE>", "N/A", "NONE"]:
+                    balance_val = val
+                    
     return bank_name, balance_val
 
 
