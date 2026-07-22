@@ -186,8 +186,9 @@ Your task: Read the text content visible in this image and identify:
 
 2. The available dollar amount(s) shown for instant-access deposit accounts only.
    - ALLOWED account types: Checking, Savings, Spend, Save, Deposit, Wallet, Main Account, Cash.
-   - DO NOT INCLUDE: Credit Cards, CD (Certificate of Deposit), Investment/Brokerage accounts, Loan accounts (personal, business, mortgage, student, auto), Debt, or locked accounts.
-   - If multiple qualifying accounts exist, mathematically sum their available balances.
+   - CRITICAL EXCLUSION RULE: Certificates of Deposit (CD), Time Deposits, Fixed Deposits, or Locked Term Accounts MUST be ignored. Even if they have a large balance, DO NOT include them in the total.
+   - STRICTLY EXCLUDE: Credit Cards, CD (Certificate of Deposit), Time Deposits, Fixed Deposits, Brokerage/Investment/Trading accounts, Loans (mortgage, personal, auto, student), and Debt.
+   - If multiple qualifying spendable accounts exist, mathematically sum their available balances. Do NOT add any CD or credit/loan balances to this sum.
    - CRITICAL FORMATTING: Drop any decimal cents. For example: $8,822.25 becomes $8,822. Strictly omit decimals.
 
 PRIVACY RULES:
@@ -1289,4 +1290,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-# Trigger rebuild 2026-07-22
