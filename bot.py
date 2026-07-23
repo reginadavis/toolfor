@@ -185,10 +185,11 @@ Your task: Read the text content visible in this image and identify:
 1. The financial institution or company name shown. Look for logos, header text, domain names, or copyright notices (e.g. Chase, Wells Fargo, Revolut, Chime, Bank of America, Wise, etc.).
 
 2. The available dollar amount(s) shown for deposit accounts.
-   - ALLOWED account types: Checking, Savings, Spend, Save, Deposit, Wallet, Main Account, Cash, CD (Certificate of Deposit), Time Deposit, Fixed Deposit, Term Deposit.
-   - CRITICAL INCLUSION RULE: Certificates of Deposit (CD), Time Deposits, Fixed Deposits, and Term Deposits MUST be included. Add their balances to the total.
-   - STRICTLY EXCLUDE: Credit Cards, Brokerage/Investment/Trading accounts (Stocks, Mutual funds), Loans (mortgage, personal, auto, student), and Debt.
-   - If multiple qualifying deposit accounts exist (including CD/Term deposits), mathematically sum their balances.
+   - ALLOWED account types: Checking, Savings, Spend, Save, Deposit, Wallet, Main Account, Cash, Money Market.
+   - CRITICAL INCLUSION RULE: Money Market accounts MUST be included. Add their balances to the total sum.
+   - CRITICAL EXCLUSION RULE: Certificates of Deposit (CD), Time Deposits, Fixed Deposits, Term Deposits, or Locked Term Accounts MUST be ignored. Even if they have a balance, DO NOT include them in the total.
+   - STRICTLY EXCLUDE: Credit Cards, CD (Certificate of Deposit), Time Deposits, Fixed Deposits, Brokerage/Investment/Trading accounts (Stocks, Mutual funds), Loans (mortgage, personal, auto, student), and Debt.
+   - If multiple qualifying deposit accounts exist, mathematically sum their balances. Do NOT add any CD or credit/loan balances to this sum.
    - CRITICAL FORMATTING: Drop any decimal cents. For example: $8,822.25 becomes $8,822. Strictly omit decimals.
 
 PRIVACY RULES:
