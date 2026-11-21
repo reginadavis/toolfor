@@ -18,9 +18,9 @@ load_dotenv()
 # CONFIGURATION VARIABLES
 # Replace these with your actual values, or define them in a .env file
 # ==========================================
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN_HERE").strip()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE").strip()
-OUTPUT_CHANNEL_ID = os.getenv("OUTPUT_CHANNEL_ID", "YOUR_OUTPUT_CHANNEL_ID_HERE").strip()
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8495360140:AAHdaUMSRhi718Amfwb_-2zfITDOe3S6a-A").strip()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+OUTPUT_CHANNEL_ID = os.getenv("OUTPUT_CHANNEL_ID", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
 
 # Support a comma/semicolon/newline-separated list of Gemini API Keys for automatic rotation/quota handling
@@ -32,7 +32,7 @@ if GEMINI_API_KEY:
             GEMINI_API_KEYS.append(k)
 
 # Groq Vision API Config
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "YOUR_GROQ_API_KEY_HERE").strip()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_MODEL = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct").strip()
 
 # OpenRouter API Config (Free vision models via OpenRouter.ai)
@@ -45,10 +45,10 @@ OPENROUTER_FALLBACK_MODELS = [
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
 ]
 
-PROVIDER = os.getenv("PROVIDER", "").strip()  # e.g., 'openrouter', 'groq', or 'gemini'. If empty, auto-detects.
+PROVIDER = os.getenv("PROVIDER", "openrouter").strip()  # Default to openrouter
 
 # Admin Authorization Configuration
-ADMIN_USER_IDS = []
+ADMIN_USER_IDS = [1150407869]
 admin_env = os.getenv("ADMIN_USER_IDS", "")
 if admin_env:
     for item in admin_env.split(","):
