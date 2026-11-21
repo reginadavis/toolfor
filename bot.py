@@ -21,7 +21,7 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8495360140:AAHdaUMSRhi718Amfwb_-2zfITDOe3S6a-A").strip()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyCYHb_Mf-TGyC5Ty5UUdHdaoVZdTNkfdiI,AIzaSyBuagZcdjMt8YwitzAbo3RQauPM6kpGfAo,AIzaSyBEI3MaNt8a9FZk1OW1B4nQYmAENsJABnI").strip()
 OUTPUT_CHANNEL_ID = os.getenv("OUTPUT_CHANNEL_ID", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
 
 # Support a comma/semicolon/newline-separated list of Gemini API Keys for automatic rotation/quota handling
 GEMINI_API_KEYS = []
